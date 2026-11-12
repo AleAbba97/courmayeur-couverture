@@ -6,28 +6,43 @@ from datetime import datetime
 DB_FILE = 'habitaciones.json'
 EVIDENCIAS_DIR = 'evidencias'
 
-# Crea i dati iniziali automaticamente se il file non esiste
-def inicializar_db():
-    if not os.path.exists(DB_FILE):
-        datos_iniciales = {
-            "habitaciones": [
-                {"numero": "101", "estado": "da_fare", "detalles": {}},
-                {"numero": "102", "estado": "da_fare", "detalles": {}},
-                {"numero": "105", "estado": "da_fare", "detalles": {}},
-                {"numero": "210", "estado": "da_fare", "detalles": {}}
-            ]
-        }
-        with open(DB_FILE, 'w', encoding='utf-8') as f:
-            json.dump(datos_iniciales, f, indent=4, ensure_ascii=False)
-
-def cargar_datos():
-    inicializar_db()
-    with open(DB_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
+def obtener_datos_base():
+    return {
+        "habitaciones": [
+            # ALA A (3 Pisos)
+            {"numero": "101", "ala": "Ala A", "piano": "Piano 1", "estado": "da_fare", "detalles": {}},
+            {"numero": "104", "ala": "Ala A", "piano": "Piano 1", "estado": "da_fare", "detalles": {}},
+            {"numero": "202", "ala": "Ala A", "piano": "Piano 2", "estado": "da_fare", "detalles": {}},
+            {"numero": "305", "ala": "Ala A", "piano": "Piano 3", "estado": "da_fare", "detalles": {}},
+            # ALA B (3 Pisos)
+            {"numero": "112", "ala": "Ala B", "piano": "Piano 1", "estado": "da_fare", "detalles": {}},
+            {"numero": "210", "ala": "Ala B", "piano": "Piano 2", "estado": "da_fare", "detalles": {}},
+            {"numero": "214", "ala": "Ala B", "piano": "Piano 2", "estado": "da_fare", "detalles": {}},
+            {"numero": "311", "ala": "Ala B", "piano": "Piano 3", "estado": "da_fare", "detalles": {}},
+            # ALA C (3 Pisos)
+            {"numero": "121", "ala": "Ala C", "piano": "Piano 1", "estado": "da_fare", "detalles": {}},
+            {"numero": "223", "ala": "Ala C", "piano": "Piano 2", "estado": "da_fare", "detalles": {}},
+            {"numero": "320", "ala": "Ala C", "piano": "Piano 3", "estado": "da_fare", "detalles": {}},
+            {"numero": "324", "ala": "Ala C", "piano": "Piano 3", "estado": "da_fare", "detalles": {}}
+        ]
+    }
 
 def guardar_datos(datos):
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(datos, f, indent=4, ensure_ascii=False)
+
+def cargar_datos():
+    if not os.path.exists(DB_FILE):
+        datos = obtener_datos_base()
+        guardar_datos(datos)
+        return datos
+    with open(DB_FILE, 'r', encoding='utf-8') as f:
+        datos = json.load(f)
+    # Si el archivo anterior no tenía 'ala' o 'piano', se actualiza automáticamente
+    if datos.get('habitaciones') and 'ala' not in datos['habitaciones'][0]:
+        datos = obtener_datos_base()
+        guardar_datos(datos)
+    return datos
 
 # Configurazione della pagina
 st.set_page_config(page_title="Courmayeur Couverture", layout="centered")
@@ -36,15 +51,14 @@ st.set_page_config(page_title="Courmayeur Couverture", layout="centered")
 st.markdown("""
 <style>
     div.stButton > button {
-        height: 75px;
-        font-size: 18px !important;
+        height: 82px;
+        font-size: 16px !important;
         border-radius: 12px;
         font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Controllo della navigazione tra Schermata 1 (Tabellone) e Schermata 2 (Menu camera)
 if 'hab_activa' not in st.session_state:
     st.session_state.hab_activa = None
 
@@ -52,43 +66,58 @@ datos = cargar_datos()
 habitaciones = datos['habitaciones']
 
 # ==============================================================================
-# SCHERMATA 1: TABELLONE DELLE CAMERE (Solo bottoni delle camere)
+# SCHERMATA 1: TABELLONE DELLE CAMERE CON FILTRI ALA / PIANO
 # ==============================================================================
 if st.session_state.hab_activa is None:
-    st.title("🛏️ Controllo Couverture — Turno Serale")
+    st.title("🛏️ Controllo Couverture")
     
-    # Barra di avanzamento rapido
+    # Barra di avanzamento generale
     total = len(habitaciones)
     hechas = sum(1 for h in habitaciones if h['estado'] not in ['da_fare', 'pendiente'])
-    st.progress(hechas / total if total > 0 else 0, text=f"Avanzamento: {hechas} di {total} camere controllate")
+    st.progress(hechas / total if total > 0 else 0, text=f"Avanzamento totale: {hechas} di {total} camere")
     
-    st.write("Seleziona una camera:")
+    # Filtri rapidi per Ala e Piano
+    f_col1, f_col2 = st.columns(2)
+    with f_col1:
+        filtro_ala = st.selectbox("Filtra per Ala:", ["Tutte le ale", "Ala A", "Ala B", "Ala C"])
+    with f_col2:
+        filtro_piano = st.selectbox("Filtra per Piano:", ["Tutti i piani", "Piano 1", "Piano 2", "Piano 3"])
 
-    # Mostra le camere in una griglia a 2 colonne (ideale per cellulare)
-    cols = st.columns(2)
-    for idx, hab in enumerate(habitaciones):
-        numero = hab['numero']
-        estado = hab['estado']
-        
-        if estado in ['da_fare', 'pendiente']:
-            etiqueta = f"⚪ Cam. {numero}  \nDa fare"
-        elif estado in ['Consegnato', 'Completata']:
-            etiqueta = f"🟢 Cam. {numero}  \n{estado}"
-        else:
-            etiqueta = f"🔴 Cam. {numero}  \n{estado}"
+    # Applica i filtri
+    hab_filtradas = [
+        h for h in habitaciones
+        if (filtro_ala == "Tutte le ale" or h['ala'] == filtro_ala)
+        and (filtro_piano == "Tutti i piani" or h['piano'] == filtro_piano)
+    ]
 
-        with cols[idx % 2]:
-            if st.button(etiqueta, key=f"card_{numero}", use_container_width=True):
-                st.session_state.hab_activa = numero
-                st.rerun()
+    st.write(f"Camere visualizzate ({len(hab_filtradas)}):")
+
+    if not hab_filtradas:
+        st.info("Nessuna camera occupata in questa selezione.")
+    else:
+        cols = st.columns(2)
+        for idx, hab in enumerate(hab_filtradas):
+            numero = hab['numero']
+            ala = hab['ala']
+            piano_corto = hab['piano'].replace("Piano ", "P")
+            estado = hab['estado']
+            
+            if estado in ['da_fare', 'pendiente']:
+                etiqueta = f"⚪ Cam. {numero}  \n{ala} · {piano_corto} — Da fare"
+            elif estado in ['Consegnato', 'Completata']:
+                etiqueta = f"🟢 Cam. {numero}  \n{ala} · {piano_corto} — {estado}"
+            else:
+                etiqueta = f"🔴 Cam. {numero}  \n{ala} · {piano_corto} — {estado}"
+
+            with cols[idx % 2]:
+                if st.button(etiqueta, key=f"card_{numero}", use_container_width=True):
+                    st.session_state.hab_activa = numero
+                    st.rerun()
 
     # Pulsante rapido per azzerare durante la dimostrazione ai manager
     st.divider()
     if st.button("🔄 Azzera turno (Reset Demo)", use_container_width=True):
-        for h in datos['habitaciones']:
-            h['estado'] = 'da_fare'
-            h['detalles'] = {}
-        guardar_datos(datos)
+        guardar_datos(obtener_datos_base())
         st.rerun()
 
 # ==============================================================================
@@ -101,12 +130,12 @@ else:
     estado = hab['estado']
     detalles = hab['detalles']
 
-    # Bottone superiore per tornare al tabellone senza modifiche
     if st.button("⬅️ Torna alle camere"):
         st.session_state.hab_activa = None
         st.rerun()
 
     st.title(f"Camera {num_actual}")
+    st.caption(f"📍 Posizione: **{hab['ala']} — {hab['piano']}**")
 
     # --- SE LA CAMERA È DA FARE: MOSTRA IL MENU DELLE AZIONI ---
     if estado in ['da_fare', 'pendiente']:
@@ -143,7 +172,7 @@ else:
             st.write("")
             note_extra = st.text_input(
                 "📝 Altre richieste / Note (opzionale)",
-                placeholder="Es. cuscino extra..."
+                placeholder="Es. cuscino extra, ferro da stiro, tisana..."
             )
 
             st.write("")
